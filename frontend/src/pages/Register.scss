@@ -1,0 +1,271 @@
+.register-container {
+  min-height: 100vh;
+  max-height: 100vh;
+  width: 100%;
+  background: var(--black-color);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+  overflow: hidden;
+  padding: 1.5rem 1rem;
+
+  // Yellow glow effect at bottom center
+  &::before {
+    content: '';
+    position: absolute;
+    bottom: -200px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 600px;
+    height: 400px;
+    background: radial-gradient(
+      ellipse at center,
+      var(--yellow-glow-30) 0%,
+      var(--yellow-glow-10) 40%,
+      transparent 70%
+    );
+    border-radius: 50%;
+    filter: blur(80px);
+    z-index: 1;
+  }
+
+  .register-content {
+    width: 100%;
+    max-width: 440px;
+    position: relative;
+    z-index: 2;
+
+    .register-header {
+      text-align: center;
+      margin-bottom: 1.8rem;
+
+      h1 {
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--white);
+        margin-bottom: 0.4rem;
+        line-height: 1.1;
+
+        .highlight {
+          background: linear-gradient(135deg, var(--yellow-color), var(--yellow-light));
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+        }
+      }
+
+      p {
+        color: var(--white-7);
+        font-size: 0.95rem;
+        font-weight: 300;
+      }
+    }
+
+    .register-form {
+      .form-row {
+        display: flex;
+        gap: 1rem;
+        
+        .form-group {
+          flex: 1;
+        }
+      }
+
+      .form-group {
+        margin-bottom: 1.2rem;
+
+        input {
+          width: 100%;
+          padding: 0.9rem 1.25rem;
+          background: var(--white-08);
+          border: 1px solid var(--white-15);
+          border-radius: 12px;
+          font-size: 1rem;
+          color: var(--white);
+          font-family: 'Gilroy', sans-serif;
+          transition: all 0.3s ease;
+
+          &::placeholder {
+            color: var(--white-5);
+          }
+
+          &:focus {
+            outline: none;
+            border-color: var(--yellow-color);
+            background: var(--white-12);
+            box-shadow: 0 0 0 3px var(--yellow-glow-10);
+          }
+        }
+      }
+
+      .create-account-btn {
+        width: 100%;
+        padding: 0.9rem;
+        background: linear-gradient(135deg, var(--yellow-color), var(--yellow-light));
+        border: none;
+        border-radius: 12px;
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: var(--black-color);
+        cursor: pointer;
+        transition: all 0.3s ease;
+        margin-bottom: 1.2rem;
+        font-family: 'Gilroy', sans-serif;
+
+        &:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 10px 25px var(--yellow-shadow);
+        }
+
+        &:active {
+          transform: translateY(0);
+        }
+      }
+
+      .sign-in-btn {
+        width: 100%;
+        padding: 0.9rem;
+        background: transparent;
+        border: 1px solid var(--white-3);
+        border-radius: 12px;
+        font-size: 1rem;
+        font-weight: 500;
+        color: var(--white);
+        cursor: pointer;
+        transition: all 0.3s ease;
+        margin-bottom: 1.2rem;
+        font-family: 'Gilroy', sans-serif;
+
+        &:hover {
+          background: var(--white-05);
+          border-color: var(--white-5);
+        }
+      }
+
+      .divider {
+        text-align: center;
+        margin: 1.2rem 0;
+        position: relative;
+
+        &::before {
+          content: '';
+          position: absolute;
+          top: 50%;
+          left: 0;
+          right: 0;
+          height: 1px;
+          background: var(--white-2);
+          z-index: 1;
+        }
+
+        span {
+          background: var(--black-color);
+          padding: 0 1rem;
+          color: var(--white-5);
+          position: relative;
+          z-index: 2;
+        }
+      }
+
+      .social-buttons {
+        display: flex;
+        gap: 1rem;
+        justify-content: center;
+
+        .social-btn {
+          width: 45px;
+          height: 45px;
+          border-radius: 12px;
+          border: 1px solid var(--white-2);
+          background: var(--white-05);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          color: var(--white-7);
+          font-size: 1.1rem;
+
+          &:hover {
+            background: var(--white-1);
+            border-color: var(--yellow-color);
+            color: var(--yellow-color);
+            transform: translateY(-2px);
+          }
+        }
+      }
+
+      .terms {
+        margin: 1.2rem 0;
+        text-align: center;
+
+        .checkbox-group {
+          display: flex;
+          align-items: flex-start;
+          gap: 0.75rem;
+          text-align: left;
+
+          input[type="checkbox"] {
+            margin-top: 0.25rem;
+            accent-color: var(--yellow-color);
+          }
+
+          label {
+            color: var(--white-7);
+            font-size: 0.85rem;
+            line-height: 1.3;
+
+            a {
+              color: var(--yellow-color);
+              text-decoration: none;
+              font-weight: 500;
+
+              &:hover {
+                text-decoration: underline;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    .register-footer {
+      text-align: center;
+      margin-top: 1.5rem;
+
+      p {
+        color: var(--white-6);
+        font-size: 0.85rem;
+
+        a {
+          color: var(--yellow-color);
+          text-decoration: none;
+          font-weight: 500;
+
+          &:hover {
+            text-decoration: underline;
+          }
+        }
+      }
+    }
+  }
+
+  // Mobile responsiveness
+  @media (max-width: 768px) {
+    padding: 1rem;
+
+    .register-content {
+      max-width: 100%;
+
+      .register-header h1 {
+        font-size: 1.8rem;
+      }
+
+      .register-form .form-row {
+        flex-direction: column;
+        gap: 0;
+      }
+    }
+  }
+}

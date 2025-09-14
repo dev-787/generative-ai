@@ -1,0 +1,31 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: 'Gilroy', sans-serif;
+}
+html,
+body {
+  height: 100%;
+  width: 100%;
+}
+:root{
+    --black-color: #0d0c0a;
+    --yellow-color: #e2b421;
+    --yellow-light: #f4d03f;
+    --white: #ffffff;
+    --white-05: rgba(255, 255, 255, 0.05);
+    --white-08: rgba(255, 255, 255, 0.08);
+    --white-1: rgba(255, 255, 255, 0.1);
+    --white-12: rgba(255, 255, 255, 0.12);
+    --white-15: rgba(255, 255, 255, 0.15);
+    --white-2: rgba(255, 255, 255, 0.2);
+    --white-3: rgba(255, 255, 255, 0.3);
+    --white-5: rgba(255, 255, 255, 0.5);
+    --white-6: rgba(255, 255, 255, 0.6);
+    --white-7: rgba(255, 255, 255, 0.7);
+    --yellow-glow-30: rgba(226, 180, 33, 0.3);
+    --yellow-glow-10: rgba(226, 180, 33, 0.1);
+    --yellow-shadow: rgba(226, 180, 33, 0.3);
+    --black-shadow: rgba(0, 0, 0, 0.8);
+}
