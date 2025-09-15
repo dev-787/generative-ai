@@ -1,15 +1,38 @@
 import React, { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import { useAuth } from '../contexts/AuthContext'
 import './Login.scss'
 
 const Login = () => {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [errorMessage, setErrorMessage] = useState('')
+  
+  const { login } = useAuth()
+  const navigate = useNavigate()
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    // Add login logic here
-    console.log('Login submitted:', { email, password })
+    
+    if (!email || !password) {
+      setErrorMessage('Please fill in all fields')
+      return
+    }
+    
+    try {
+      setIsSubmitting(true)
+      setErrorMessage('')
+      
+      await login(email, password)
+      
+      // Redirect to home page after successful login
+      navigate('/')
+    } catch (error) {
+      setErrorMessage(error.message || 'Login failed. Please try again.')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -23,6 +46,12 @@ const Login = () => {
         </div>
 
         <form className="login-form" onSubmit={handleSubmit}>
+          {errorMessage && (
+            <div className="error-message" style={{ color: 'red', marginBottom: '1rem', textAlign: 'center' }}>
+              {errorMessage}
+            </div>
+          )}
+          
           <div className="form-group">
             <input
               type="email"
@@ -30,6 +59,7 @@ const Login = () => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
+              disabled={isSubmitting}
             />
           </div>
 
@@ -40,11 +70,12 @@ const Login = () => {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
+              disabled={isSubmitting}
             />
           </div>
 
-          <button type="submit" className="sign-in-btn">
-            SIGN IN
+          <button type="submit" className="sign-in-btn" disabled={isSubmitting}>
+            {isSubmitting ? 'SIGNING IN...' : 'SIGN IN'}
           </button>
 
           <Link to="/register">

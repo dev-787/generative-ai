@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import { useAuth } from '../contexts/AuthContext'
 import './Register.scss'
 
 const Register = () => {
@@ -11,6 +12,11 @@ const Register = () => {
     confirmPassword: '',
     agreeToTerms: false
   })
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [errorMessage, setErrorMessage] = useState('')
+  
+  const { register } = useAuth()
+  const navigate = useNavigate()
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target
@@ -20,10 +26,48 @@ const Register = () => {
     }))
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    // Add registration logic here
-    console.log('Registration submitted:', formData)
+    
+    // Validate form
+    if (!formData.firstName || !formData.lastName || !formData.email || !formData.password || !formData.confirmPassword) {
+      setErrorMessage('Please fill in all fields')
+      return
+    }
+    
+    if (formData.password !== formData.confirmPassword) {
+      setErrorMessage('Passwords do not match')
+      return
+    }
+    
+    if (formData.password.length < 6) {
+      setErrorMessage('Password must be at least 6 characters long')
+      return
+    }
+    
+    if (!formData.agreeToTerms) {
+      setErrorMessage('Please agree to the terms and conditions')
+      return
+    }
+    
+    try {
+      setIsSubmitting(true)
+      setErrorMessage('')
+      
+      await register({
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        email: formData.email,
+        password: formData.password
+      })
+      
+      // Redirect to home page after successful registration
+      navigate('/')
+    } catch (error) {
+      setErrorMessage(error.message || 'Registration failed. Please try again.')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -37,6 +81,12 @@ const Register = () => {
         </div>
 
         <form className="register-form" onSubmit={handleSubmit}>
+          {errorMessage && (
+            <div className="error-message" style={{ color: 'red', marginBottom: '1rem', textAlign: 'center' }}>
+              {errorMessage}
+            </div>
+          )}
+          
           <div className="form-row">
             <div className="form-group">
               <input
@@ -46,6 +96,7 @@ const Register = () => {
                 value={formData.firstName}
                 onChange={handleChange}
                 required
+                disabled={isSubmitting}
               />
             </div>
             <div className="form-group">
@@ -56,6 +107,7 @@ const Register = () => {
                 value={formData.lastName}
                 onChange={handleChange}
                 required
+                disabled={isSubmitting}
               />
             </div>
           </div>
@@ -68,6 +120,7 @@ const Register = () => {
               value={formData.email}
               onChange={handleChange}
               required
+              disabled={isSubmitting}
             />
           </div>
 
@@ -79,6 +132,7 @@ const Register = () => {
               value={formData.password}
               onChange={handleChange}
               required
+              disabled={isSubmitting}
             />
           </div>
 
@@ -90,6 +144,7 @@ const Register = () => {
               value={formData.confirmPassword}
               onChange={handleChange}
               required
+              disabled={isSubmitting}
             />
           </div>
 
@@ -102,6 +157,7 @@ const Register = () => {
                 checked={formData.agreeToTerms}
                 onChange={handleChange}
                 required
+                disabled={isSubmitting}
               />
               <label htmlFor="agreeToTerms">
                 I agree to the <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a>
@@ -109,8 +165,8 @@ const Register = () => {
             </div>
           </div>
 
-          <button type="submit" className="create-account-btn">
-            CREATE ACCOUNT
+          <button type="submit" className="create-account-btn" disabled={isSubmitting}>
+            {isSubmitting ? 'CREATING ACCOUNT...' : 'CREATE ACCOUNT'}
           </button>
 
           <Link to="/login">

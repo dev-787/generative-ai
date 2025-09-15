@@ -13,7 +13,7 @@ async function registerUser(req,res) {
     const isUserAlreadyExist = await userModel.findOne({email})
 
     if(isUserAlreadyExist){
-        res.status(400).json({
+        return res.status(400).json({
             message:"User already exist"
         })
     }
@@ -54,7 +54,9 @@ async function loginUser(req,res) {
     }
 
     const isPasswordValid = await bcrypt.compare(password,user.password)
-    if(!isPasswordValid) res.status(400).json({message:"invalid email or password "})
+    if(!isPasswordValid) {
+        return res.status(400).json({message:"invalid email or password "})
+    }
 
     const token = jwt.sign({id:user._id},process.env.JWT_SECRET)
 
