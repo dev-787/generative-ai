@@ -55,6 +55,22 @@ class ApiService {
       method: 'POST',
     });
   }
+
+  // Chat endpoints
+  async createChat(title) {
+    return this.request('/chat', {
+      method: 'POST',
+      body: JSON.stringify({ title }),
+    });
+  }
+
+  async getChats() {
+    return this.request('/chat');
+  }
+
+  async getChat(chatId) {
+    return this.request(`/chat/${chatId}`);
+  }
 }
 
 export default new ApiService();

@@ -1,10 +1,69 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import './Chatbot.scss'
+import Sidebar from '../components/Sidebar.jsx'
+import searchIcon from '../assets/search.svg'
+import settingIcon from '../assets/setting.svg'
+import logoutIcon from '../assets/logout.svg'
+import websocketService from '../services/websocket.js'
+import apiService from '../services/api.js'
+import { useAuth } from '../contexts/AuthContext.jsx'
 
 const Chatbot = () => {
-  const [message, setMessage] = React.useState('')
-  const [isRecording, setIsRecording] = React.useState(false)
-  const [messages, setMessages] = React.useState([])
+  const [message, setMessage] = useState('')
+  const [isRecording, setIsRecording] = useState(false)
+  const [messages, setMessages] = useState([])
+  const [isSidebarExpanded, setIsSidebarExpanded] = useState(false)
+  const [currentChat, setCurrentChat] = useState(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [connectionStatus, setConnectionStatus] = useState('disconnected')
+  
+  const { user, logout } = useAuth()
+  
+  // Initialize WebSocket connection and create default chat
+  useEffect(() => {
+    const initializeChat = async () => {
+      if (!user) return
+      
+      try {
+        setConnectionStatus('connecting')
+        
+        // Connect to WebSocket
+        await websocketService.connect()
+        setConnectionStatus('connected')
+        
+        // Create or get default chat
+        const chatResponse = await apiService.createChat('New Chat')
+        setCurrentChat(chatResponse.chat)
+        
+        console.log('Chat initialized:', chatResponse.chat)
+        
+      } catch (error) {
+        console.error('Failed to initialize chat:', error)
+        setConnectionStatus('error')
+        
+        // If WebSocket fails, still try to create a chat for demo purposes
+        if (error.message && error.message.includes('WebSocket')) {
+          console.warn('WebSocket failed, creating demo chat...')
+          try {
+            const chatResponse = await apiService.createChat('New Chat')
+            setCurrentChat(chatResponse.chat)
+            console.log('Demo chat created:', chatResponse.chat)
+          } catch (chatError) {
+            console.error('Failed to create demo chat:', chatError)
+            // Create a mock chat for demo purposes
+            setCurrentChat({ _id: 'demo-chat-' + Date.now(), title: 'Demo Chat' })
+          }
+        }
+      }
+    }
+    
+    initializeChat()
+    
+    // Cleanup on unmount
+    return () => {
+      websocketService.disconnect()
+    }
+  }, [user])
   
   const handleSearch = () => {
     console.log('Search clicked')
@@ -14,31 +73,114 @@ const Chatbot = () => {
     console.log('Settings clicked')
   }
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     console.log('Logout clicked')
-    // Add logout functionality here
+    websocketService.disconnect()
+    await logout()
   }
   
-  const handleSendMessage = () => {
-    if (message.trim()) {
-      const newMessage = {
-        id: Date.now(),
-        text: message.trim(),
-        type: 'user',
+  const handleNewChat = async () => {
+    try {
+      const chatResponse = await apiService.createChat('New Chat')
+      setCurrentChat(chatResponse.chat)
+      setMessages([])
+      setMessage('')
+      console.log('New chat created:', chatResponse.chat)
+    } catch (error) {
+      console.error('Failed to create new chat:', error)
+    }
+  }
+  
+  const handleHistory = () => {
+    console.log('Chat history clicked')
+  }
+  
+  const handleUpgrade = () => {
+    console.log('Upgrade clicked')
+  }
+  
+  const handleSidebarExpandedChange = (expanded) => {
+    setIsSidebarExpanded(expanded)
+  }
+  
+  const handleSendMessage = async () => {
+    if (!message.trim() || !currentChat || isLoading) {
+      return
+    }
+    
+    const userMessage = {
+      id: Date.now(),
+      content: message.trim(),
+      type: 'user',
+      timestamp: new Date()
+    }
+    
+    // Add user message to local state immediately
+    setMessages(prev => [...prev, userMessage])
+    const currentMessage = message.trim()
+    setMessage('')
+    setIsLoading(true)
+    
+    // Auto-resize textarea back to initial state
+    setTimeout(() => {
+      const textarea = document.querySelector('.chat-input')
+      if (textarea) {
+        textarea.style.height = 'auto'
+      }
+    }, 0)
+    
+    try {
+      let response;
+      
+      // Try WebSocket first, fallback to HTTP if needed
+      if (connectionStatus === 'connected' && websocketService.isSocketConnected()) {
+        try {
+          response = await websocketService.sendMessage({
+            content: currentMessage,
+            chat: currentChat._id
+          })
+          console.log('Received AI response via WebSocket:', response)
+        } catch (wsError) {
+          console.warn('WebSocket failed, trying HTTP fallback:', wsError)
+          // For now, create a mock response
+          response = {
+            content: `Echo: "${currentMessage}" (Demo response - backend connection needed for AI)`,
+            chat: currentChat._id
+          }
+        }
+      } else {
+        console.warn('WebSocket not connected, using demo response')
+        // Create a mock response for demo
+        response = {
+          content: `Echo: "${currentMessage}" (Demo response - please ensure backend is running on port 3000)`,
+          chat: currentChat._id
+        }
+      }
+      
+      // Add AI response to messages
+      const aiMessage = {
+        id: Date.now() + 1,
+        content: response.content,
+        type: 'assistant',
         timestamp: new Date()
       }
       
-      setMessages(prev => [...prev, newMessage])
-      setMessage('')
-      console.log('Message sent:', newMessage)
+      setMessages(prev => [...prev, aiMessage])
       
-      // Auto-resize textarea back to initial state
-      setTimeout(() => {
-        const textarea = document.querySelector('.chat-input')
-        if (textarea) {
-          textarea.style.height = 'auto'
-        }
-      }, 0)
+    } catch (error) {
+      console.error('Failed to send message:', error)
+      
+      // Add error message to chat
+      const errorMessage = {
+        id: Date.now() + 1,
+        content: 'Sorry, I encountered an error. Please ensure the backend server is running on port 3000 and try again.',
+        type: 'assistant',
+        timestamp: new Date()
+      }
+      
+      setMessages(prev => [...prev, errorMessage])
+    } finally {
+      setIsLoading(false)
     }
   }
   
@@ -60,46 +202,45 @@ const Chatbot = () => {
 
   return (
     <div className="chatbot-container">
-      <nav className="navbar">
+      <Sidebar 
+        onSearch={handleSearch}
+        onSettings={handleSettings}
+        onLogout={handleLogout}
+        onNewChat={handleNewChat}
+        onHistory={handleHistory}
+        onUpgrade={handleUpgrade}
+        onExpandedChange={handleSidebarExpandedChange}
+      />
+      
+      {/* Top navbar with essential actions */}
+      <nav className="top-navbar">
         <div className="navbar-left">
-          {/* AI Logo */}
-          <div className="ai-logo">
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12,2A2,2 0 0,1 14,4C14,5.1 13.1,6 12,6A2,2 0 0,1 10,4A2,2 0 0,1 12,2ZM16.5,8.5C17.9,8.5 19,9.6 19,11V15A6,6 0 0,1 13,21H11A6,6 0 0,1 5,15V11C5,9.6 6.1,8.5 7.5,8.5H16.5ZM7.5,10.5A0.5,0.5 0 0,0 7,11V15A4,4 0 0,0 11,19H13A4,4 0 0,0 17,15V11A0.5,0.5 0 0,0 16.5,10.5H7.5ZM9,12H15A1,1 0 0,1 16,13A1,1 0 0,1 15,14H9A1,1 0 0,1 8,13A1,1 0 0,1 9,12ZM9,15H11A1,1 0 0,1 12,16A1,1 0 0,1 11,17H9A1,1 0 0,1 8,16A1,1 0 0,1 9,15Z"/>
-            </svg>
+          <div className={`connection-status ${connectionStatus}`}>
+            <div className="status-dot"></div>
+            <span className="status-text">
+              {connectionStatus === 'connected' && 'Connected'}
+              {connectionStatus === 'connecting' && 'Connecting...'}
+              {connectionStatus === 'disconnected' && 'Disconnected'}
+              {connectionStatus === 'error' && 'Connection Error'}
+            </span>
           </div>
         </div>
-        
         <div className="navbar-right">
           <button onClick={handleSearch} className="nav-btn" data-tooltip="true">
-            {/* Search Icon */}
-            <svg viewBox="2 2 21 21" fill="none">
-              <path d="M3 5L19 5" stroke="currentColor" strokeWidth="2" strokeLinecap="square" strokeLinejoin="round"/>
-              <path d="M3 12H7" stroke="currentColor" strokeWidth="2" strokeLinecap="square" strokeLinejoin="round"/>
-              <circle cx="16" cy="15" r="4" stroke="currentColor" strokeWidth="2"/>
-              <path d="M19 18L21 20" stroke="currentColor" strokeWidth="2" strokeLinecap="square"/>
-              <path d="M3 19H7" stroke="currentColor" strokeWidth="2" strokeLinecap="square" strokeLinejoin="round"/>
-            </svg>
+            <img src={searchIcon} alt="Search" className="nav-icon" />
             <div className="tooltip">
               <span className="tooltip-text">Search</span>
               <span className="tooltip-shortcut">Ctrl+K</span>
             </div>
           </button>
           <button onClick={handleSettings} className="nav-btn" data-tooltip="true">
-            {/* Settings Icon */}
-            <svg viewBox="0 0 24 24" fill="none">
-              <path stroke="currentColor" strokeWidth="2" d="M13.5 3h-3C9.408 5.913 8.024 6.711 4.956 6.201l-1.5 2.598c1.976 2.402 1.976 4 0 6.402l1.5 2.598c3.068-.51 4.452.288 5.544 3.201h3c1.092-2.913 2.476-3.711 5.544-3.2l1.5-2.599c-1.976-2.402-1.976-4 0-6.402l-1.5-2.598c-3.068.51-4.452-.288-5.544-3.201Z"/>
-              <circle cx="12" cy="12" r="2.5" fill="currentColor"/>
-            </svg>
+            <img src={settingIcon} alt="Settings" className="nav-icon" />
             <div className="tooltip">
               <span className="tooltip-text">Settings</span>
             </div>
           </button>
           <button onClick={handleLogout} className="nav-btn" data-tooltip="true">
-            {/* Logout Icon */}
-            <svg viewBox="0 0 24 24" fill="none">
-              <path stroke="currentColor" strokeWidth="2" d="M9 12h11m0 0-4-4m4 4-4 4m-4 4H8a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4h4"/>
-            </svg>
+            <img src={logoutIcon} alt="Logout" className="nav-icon" />
             <div className="tooltip">
               <span className="tooltip-text">Logout</span>
             </div>
@@ -107,16 +248,16 @@ const Chatbot = () => {
         </div>
       </nav>
       
-      <main className={`main-content ${messages.length === 0 ? 'no-messages' : 'has-messages'}`}>
+      <main className={`main-content ${messages.length === 0 ? 'no-messages' : 'has-messages'} ${isSidebarExpanded ? 'sidebar-expanded' : ''}`}>
         {/* Chat messages */}
         <div className="chat-messages">
           {messages.map((msg) => (
             <div key={msg.id} className={`message ${msg.type}`}>
               <div className="message-content">
-                {msg.text}
+                {msg.content}
               </div>
               <div className="message-time">
-                {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </div>
             </div>
           ))}
@@ -131,7 +272,7 @@ const Chatbot = () => {
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 onKeyPress={handleKeyPress}
-                placeholder="What do you want to know?"
+                placeholder={isLoading ? "AI is thinking..." : "What do you want to know?"}
                 className="chat-input"
                 rows="1"
                 style={{ height: 'auto', minHeight: '24px', maxHeight: '120px' }}
@@ -139,6 +280,7 @@ const Chatbot = () => {
                   e.target.style.height = 'auto'
                   e.target.style.height = e.target.scrollHeight + 'px'
                 }}
+                disabled={isLoading || connectionStatus !== 'connected'}
               />
             </div>
             
