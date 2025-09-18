@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import './Chatbot.scss'
 import Sidebar from '../components/Sidebar.jsx'
+import ChatHistory from '../components/ChatHistory.jsx'
 import searchIcon from '../assets/search.svg'
 import settingIcon from '../assets/setting.svg'
 import logoutIcon from '../assets/logout.svg'
@@ -16,8 +18,10 @@ const Chatbot = () => {
   const [currentChat, setCurrentChat] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
   const [connectionStatus, setConnectionStatus] = useState('disconnected')
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   
   const { user, logout } = useAuth()
+  const navigate = useNavigate()
   
   // Initialize WebSocket connection and create default chat
   useEffect(() => {
@@ -26,6 +30,18 @@ const Chatbot = () => {
       
       try {
         setConnectionStatus('connecting')
+
+        // Probe auth/session with a simple authorized endpoint
+        try {
+          await apiService.getChats()
+        } catch (authErr) {
+          if (authErr.message && (authErr.message.includes('401') || authErr.message.includes('Unauthorized'))) {
+            // Local user exists but cookie/session missing -> force re-login
+            await logout()
+            navigate('/login', { replace: true, state: { from: '/chatbot' } })
+            return
+          }
+        }
         
         // Connect to WebSocket
         await websocketService.connect()
@@ -50,9 +66,19 @@ const Chatbot = () => {
             console.log('Demo chat created:', chatResponse.chat)
           } catch (chatError) {
             console.error('Failed to create demo chat:', chatError)
+            // Check if it's an authentication error
+            if (chatError.message && (chatError.message.includes('401') || chatError.message.includes('Unauthorized'))) {
+              console.error('Authentication failed, redirecting to login...')
+              await logout()
+              return
+            }
             // Create a mock chat for demo purposes
             setCurrentChat({ _id: 'demo-chat-' + Date.now(), title: 'Demo Chat' })
           }
+        } else if (error.message && (error.message.includes('401') || error.message.includes('Unauthorized'))) {
+          console.error('Authentication failed, redirecting to login...')
+          await logout()
+          return
         }
       }
     }
@@ -93,6 +119,27 @@ const Chatbot = () => {
   
   const handleHistory = () => {
     console.log('Chat history clicked')
+    setIsHistoryOpen(true)
+  }
+  
+  const handleCloseHistory = () => {
+    setIsHistoryOpen(false)
+  }
+  
+  const handleSelectHistoryChat = (chat, chatMessages) => {
+    // Load the selected chat into the current chat interface
+    setCurrentChat(chat)
+    
+    // Convert messages to the expected format
+    const formattedMessages = chatMessages.map(msg => ({
+      id: msg._id,
+      content: msg.content,
+      type: msg.role === 'user' ? 'user' : 'assistant',
+      timestamp: new Date(msg.createdAt)
+    }))
+    
+    setMessages(formattedMessages)
+    console.log('Selected chat:', chat, 'with', formattedMessages.length, 'messages')
   }
   
   const handleUpgrade = () => {
@@ -326,6 +373,13 @@ const Chatbot = () => {
           </div>
         </div>
       </main>
+      
+      {/* Chat History Modal */}
+      <ChatHistory 
+        isOpen={isHistoryOpen}
+        onClose={handleCloseHistory}
+        onSelectChat={handleSelectHistoryChat}
+      />
     </div>
   )
 }

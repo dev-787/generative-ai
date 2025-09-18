@@ -71,6 +71,10 @@ class ApiService {
   async getChat(chatId) {
     return this.request(`/chat/${chatId}`);
   }
+
+  async getChatMessages(chatId) {
+    return this.request(`/messages/chat/${chatId}`);
+  }
 }
 
 export default new ApiService();
