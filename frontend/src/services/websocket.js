@@ -4,7 +4,7 @@ class WebSocketService {
   constructor() {
     this.socket = null;
     this.isConnected = false;
-    this.messageHandlers = new Map();
+    this.messageHandlers = new Map(); // event -> Set of handlers
     this.connectionPromise = null;
   }
 
@@ -54,47 +54,32 @@ class WebSocketService {
 
         // Listen for AI responses
         this.socket.on('ai-response', (data) => {
-          console.log('Received AI response:', data);
-          const handler = this.messageHandlers.get('ai-response');
-          if (handler) {
-            handler(data);
-          }
+          this._emit('ai-response', data);
         });
         
         // Listen for chat history updates
         this.socket.on('chat-history-update', (data) => {
-          console.log('Chat history update:', data);
-          const handler = this.messageHandlers.get('chat-history-update');
-          if (handler) {
-            handler(data);
-          }
+          this._emit('chat-history-update', data);
         });
         
         // Listen for message updates in current chat
         this.socket.on('message-update', (data) => {
-          console.log('Message update:', data);
-          const handler = this.messageHandlers.get('message-update');
-          if (handler) {
-            handler(data);
-          }
+          this._emit('message-update', data);
         });
         
         // Listen for general chat updates
         this.socket.on('chat-update', (data) => {
-          console.log('Chat update:', data);
-          const handler = this.messageHandlers.get('chat-update');
-          if (handler) {
-            handler(data);
-          }
+          this._emit('chat-update', data);
         });
         
         // Listen for chat title updates
         this.socket.on('chat-title-update', (data) => {
-          console.log('Chat title update:', data);
-          const handler = this.messageHandlers.get('chat-title-update');
-          if (handler) {
-            handler(data);
-          }
+          this._emit('chat-title-update', data);
+        });
+
+        // Listen for lazy chat creation confirmation
+        this.socket.on('chat-created', (data) => {
+          this._emit('chat-created', data);
         });
 
       } catch (error) {
@@ -133,40 +118,48 @@ class WebSocketService {
     }
 
     return new Promise((resolve, reject) => {
-      try {
-        // Send message to backend
-        this.socket.emit('ai-message', messageData);
-        
-        // Set up one-time listener for the response
-        const responseHandler = (response) => {
-          if (response.chat === messageData.chat) {
-            this.socket.off('ai-response', responseHandler);
-            resolve(response);
-          }
-        };
-        
-        this.socket.on('ai-response', responseHandler);
-        
-        // Set timeout for response
-        setTimeout(() => {
-          this.socket.off('ai-response', responseHandler);
-          reject(new Error('Response timeout'));
-        }, 30000); // 30 seconds timeout
-        
-      } catch (error) {
-        reject(error);
+      const timeout = setTimeout(() => {
+        reject(new Error('Response timeout'));
+      }, 30000);
+
+      // One-shot: next ai-response is ours
+      this.socket.once('ai-response', (response) => {
+        clearTimeout(timeout);
+        resolve(response);
+      });
+
+      // If new chat, capture the created chatId before emitting
+      if (!messageData.chat) {
+        this.socket.once('chat-created', (data) => {
+          messageData.chat = data.chatId;
+        });
       }
+
+      this.socket.emit('ai-message', messageData);
     });
   }
 
-  // Register message handler
+  // Register message handler (supports multiple handlers per event)
   onMessage(event, handler) {
-    this.messageHandlers.set(event, handler);
+    if (!this.messageHandlers.has(event)) {
+      this.messageHandlers.set(event, new Set())
+    }
+    this.messageHandlers.get(event).add(handler)
   }
 
-  // Remove message handler
-  offMessage(event) {
-    this.messageHandlers.delete(event);
+  // Remove a specific handler, or all handlers if none specified
+  offMessage(event, handler) {
+    if (!this.messageHandlers.has(event)) return
+    if (handler) {
+      this.messageHandlers.get(event).delete(handler)
+    } else {
+      this.messageHandlers.delete(event)
+    }
+  }
+
+  _emit(event, data) {
+    const handlers = this.messageHandlers.get(event)
+    if (handlers) handlers.forEach(h => h(data))
   }
 
   // Check connection status

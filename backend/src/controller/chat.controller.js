@@ -27,10 +27,6 @@ async function getChat(req,res) {
     const user = req.user;
 
     try {
-        // First, clean up empty chats
-        await cleanupEmptyChats(user._id);
-        
-        // Then get the remaining chats
         const chats = await chatModel.find({user:user._id}).sort({ lastActivity: -1 });
 
         res.status(200).json({

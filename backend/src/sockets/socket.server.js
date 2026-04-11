@@ -102,6 +102,17 @@ function InitSocketServer(httpServer) {
     console.log(`[Socket] User ${socket.user._id} joined personal room`);
     
     socket.on("ai-message", async (messagePayLoad) => {
+      // Lazily create chat if not provided (new chat with no messages yet)
+      if (!messagePayLoad.chat) {
+        const newChat = await chatModel.create({
+          user: socket.user._id,
+          title: 'New Chat'
+        });
+        messagePayLoad.chat = newChat._id.toString();
+        // Notify client of the new chat ID so it can track it
+        socket.emit("chat-created", { chatId: messagePayLoad.chat });
+      }
+
       // Update current chat ID when user sends a message
       socket.currentChatId = messagePayLoad.chat;
       
@@ -164,7 +175,7 @@ function InitSocketServer(httpServer) {
         },
       ];
 
-      const response = await generateResponse([...ltm, ...stm]);
+      const response = await generateResponse([...ltm, ...stm], messagePayLoad.attachment?.path || null);
 
       // Emit AI response to the specific user who sent the message
       socket.emit("ai-response", {

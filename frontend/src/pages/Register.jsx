@@ -62,8 +62,8 @@ const Register = () => {
         password: formData.password
       })
       
-      // Redirect to intended page or home page after successful registration
-      const intendedPath = location.state?.from || '/'
+      // Redirect to chatbot after successful registration
+      const intendedPath = location.state?.from || '/chatbot'
       navigate(intendedPath, { replace: true })
     } catch (error) {
       setErrorMessage(error.message || 'Registration failed. Please try again.')

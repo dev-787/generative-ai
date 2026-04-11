@@ -6,6 +6,7 @@ const cookieParser = require("cookie-parser")
 const authRoutes = require("./routes/auth.routes")
 const chatRoutes = require("./routes/chat.routes")
 const messageRoutes = require("./routes/message.routes")
+const uploadRoutes = require("./routes/upload.route")
 
 const app = express();
 
@@ -25,5 +26,7 @@ app.use('/demo', express.static('../frontend/src/demo'))
 app.use("/api/auth", authRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/messages", messageRoutes);
+app.use("/api/upload", uploadRoutes);
+app.use('/uploads', express.static(require('path').join(__dirname, '../../uploads')));
 
 module.exports = app;

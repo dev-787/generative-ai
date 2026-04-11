@@ -9,7 +9,6 @@
   overflow: hidden;
   padding: 2rem 1rem;
 
-  // Yellow glow effect at bottom center
   &::before {
     content: '';
     position: absolute;
@@ -20,8 +19,8 @@
     height: 400px;
     background: radial-gradient(
       ellipse at center,
-      var(--yellow-glow-30) 0%,
-      var(--yellow-glow-10) 40%,
+      rgba(99, 102, 241, 0.25) 0%,
+      rgba(99, 102, 241, 0.08) 40%,
       transparent 70%
     );
     border-radius: 50%;
@@ -47,7 +46,7 @@
         line-height: 1.2;
 
         .highlight {
-          background: linear-gradient(135deg, var(--yellow-color), var(--yellow-light));
+          background: linear-gradient(135deg, #2563eb, #9333ea);
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
           background-clip: text;
@@ -76,15 +75,13 @@
           font-family: 'Gilroy', sans-serif;
           transition: all 0.3s ease;
 
-          &::placeholder {
-            color: var(--white-5);
-          }
+          &::placeholder { color: var(--white-5); }
 
           &:focus {
             outline: none;
-            border-color: var(--yellow-color);
+            border-color: #6366f1;
             background: var(--white-12);
-            box-shadow: 0 0 0 3px var(--yellow-glow-10);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
           }
         }
       }
@@ -92,12 +89,12 @@
       .sign-in-btn {
         width: 100%;
         padding: 1rem;
-        background: linear-gradient(135deg, var(--yellow-color), var(--yellow-light));
+        background: linear-gradient(135deg, #2563eb, #9333ea);
         border: none;
         border-radius: 12px;
         font-size: 1.1rem;
         font-weight: 600;
-        color: var(--black-color);
+        color: #ffffff;
         cursor: pointer;
         transition: all 0.3s ease;
         margin-bottom: 1.5rem;
@@ -105,12 +102,11 @@
 
         &:hover {
           transform: translateY(-2px);
-          box-shadow: 0 10px 25px var(--yellow-shadow);
+          box-shadow: 0 10px 25px rgba(99, 102, 241, 0.4);
+          background: linear-gradient(135deg, #1d4ed8, #7e22ce);
         }
 
-        &:active {
-          transform: translateY(0);
-        }
+        &:active { transform: translateY(0); }
       }
 
       .create-account-btn {
@@ -179,8 +175,8 @@
 
           &:hover {
             background: var(--white-1);
-            border-color: var(--yellow-color);
-            color: var(--yellow-color);
+            border-color: #6366f1;
+            color: #818cf8;
             transform: translateY(-2px);
           }
         }
@@ -196,13 +192,11 @@
         font-size: 0.9rem;
 
         a {
-          color: var(--yellow-color);
+          color: #818cf8;
           text-decoration: none;
           font-weight: 500;
 
-          &:hover {
-            text-decoration: underline;
-          }
+          &:hover { text-decoration: underline; }
         }
       }
     }

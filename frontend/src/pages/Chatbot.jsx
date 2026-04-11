@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import MarkdownMessage from '../components/MarkdownMessage.jsx'
 import './Chatbot.scss'
 import Sidebar from '../components/Sidebar.jsx'
 import ChatHistory from '../components/ChatHistory.jsx'
@@ -23,31 +24,46 @@ const Chatbot = () => {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
+  const [attachedFile, setAttachedFile] = useState(null)
+  const [mediaRecorder, setMediaRecorder] = useState(null)
   
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const fileInputRef = React.useRef(null)
+  const messagesEndRef = React.useRef(null)
   
+  // Keep a ref to currentChat to avoid stale closures in socket handlers
+  const currentChatRef = React.useRef(currentChat)
+  useEffect(() => { currentChatRef.current = currentChat }, [currentChat])
+  
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  // Handle chat-created event from server (lazy chat creation)
+  useEffect(() => {
+    if (!websocketService.isSocketConnected()) return
+    const handleChatCreated = (data) => {
+      setCurrentChat({ _id: data.chatId, title: 'New Chat' })
+      websocketService.joinChat(data.chatId)
+    }
+    websocketService.onMessage('chat-created', handleChatCreated)
+    return () => websocketService.offMessage('chat-created', handleChatCreated)
+  }, [connectionStatus])
+
   // Handle real-time chat title updates
   useEffect(() => {
-    if (websocketService.isSocketConnected()) {
-      const handleTitleUpdate = (data) => {
-        console.log('Chat title update in main component:', data);
-        // Update current chat title if it matches
-        if (currentChat && currentChat._id === data.chatId) {
-          setCurrentChat(prev => ({
-            ...prev,
-            title: data.title
-          }));
-        }
-      };
-      
-      websocketService.onMessage('chat-title-update', handleTitleUpdate);
-      
-      return () => {
-        websocketService.offMessage('chat-title-update');
-      };
+    if (!websocketService.isSocketConnected()) return
+    const handleTitleUpdate = (data) => {
+      const cur = currentChatRef.current
+      if (cur && (cur._id === data.chatId || cur._id?.toString() === data.chatId?.toString())) {
+        setCurrentChat(prev => ({ ...prev, title: data.title }))
+      }
     }
-  }, [currentChat, connectionStatus]);
+    websocketService.onMessage('chat-title-update', handleTitleUpdate)
+    return () => websocketService.offMessage('chat-title-update', handleTitleUpdate)
+  }, [connectionStatus])
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -87,24 +103,7 @@ const Chatbot = () => {
         await websocketService.connect()
         setConnectionStatus('connected')
         
-        // Clean up empty chats on app start
-        try {
-          const cleanupResult = await apiService.cleanupEmptyChats()
-          if (cleanupResult.deletedCount > 0) {
-            console.log(`App startup: Cleaned up ${cleanupResult.deletedCount} empty chats`)
-          }
-        } catch (cleanupError) {
-          console.warn('Startup cleanup failed:', cleanupError)
-        }
-        
-        // Create or get default chat
-        const chatResponse = await apiService.createChat('New Chat')
-        setCurrentChat(chatResponse.chat)
-        
-        // Join the chat room for real-time updates
-        websocketService.joinChat(chatResponse.chat._id)
-        
-        console.log('Chat initialized:', chatResponse.chat)
+        // Start with a clean empty state — chat is created lazily on first message
         
       } catch (error) {
         console.error('Failed to initialize chat:', error)
@@ -138,18 +137,9 @@ const Chatbot = () => {
           }
         }, 2000)
         
-        // If WebSocket fails, still try to create a chat for demo purposes
+        // If WebSocket fails, still allow the user to see the UI
         if (error.message && error.message.includes('WebSocket')) {
-          console.warn('WebSocket failed, creating demo chat...')
-          try {
-            const chatResponse = await apiService.createChat('New Chat')
-            setCurrentChat(chatResponse.chat)
-            console.log('Demo chat created:', chatResponse.chat)
-          } catch (chatError) {
-            console.error('Failed to create demo chat:', chatError)
-            // Create a mock chat for demo purposes
-            setCurrentChat({ _id: 'demo-chat-' + Date.now(), title: 'Demo Chat' })
-          }
+          console.warn('WebSocket failed, running in offline mode')
         }
       }
     }
@@ -191,32 +181,10 @@ const Chatbot = () => {
     await logout()
   }
   
-  const handleNewChat = async () => {
-    try {
-      // Clean up any existing empty chats before creating a new one
-      try {
-        const cleanupResult = await apiService.cleanupEmptyChats()
-        if (cleanupResult.deletedCount > 0) {
-          console.log(`Cleaned up ${cleanupResult.deletedCount} empty chats`)
-        }
-      } catch (cleanupError) {
-        console.warn('Cleanup failed, continuing with new chat creation:', cleanupError)
-      }
-      
-      const chatResponse = await apiService.createChat('New Chat')
-      setCurrentChat(chatResponse.chat)
-      setMessages([])
-      setMessage('')
-      
-      // Join the new chat room for real-time updates
-      if (websocketService.isSocketConnected()) {
-        websocketService.joinChat(chatResponse.chat._id)
-      }
-      
-      console.log('New chat created:', chatResponse.chat)
-    } catch (error) {
-      console.error('Failed to create new chat:', error)
-    }
+  const handleNewChat = () => {
+    setCurrentChat(null)
+    setMessages([])
+    setMessage('')
   }
   
   const handleHistory = () => {
@@ -322,93 +290,177 @@ const Chatbot = () => {
   }
   
   const handleSendMessage = async () => {
-    if (!message.trim() || !currentChat || isLoading) {
-      return
-    }
+    if ((!message.trim() && !attachedFile) || isLoading) return
     
     const userMessage = {
       id: Date.now(),
-      content: message.trim(),
+      content: message.trim() || '[Sent an attachment]',
       type: 'user',
-      timestamp: new Date()
+      timestamp: new Date(),
+      attachment: attachedFile
     }
     
-    // Add user message to local state immediately
     setMessages(prev => [...prev, userMessage])
     const currentMessage = message.trim()
+    const currentAttachment = attachedFile
     setMessage('')
+    setAttachedFile(null)  // don't revoke blob URL — it's still needed in the message
     setIsLoading(true)
     
-    // Auto-resize textarea back to initial state
     setTimeout(() => {
       const textarea = document.querySelector('.chat-input')
-      if (textarea) {
-        textarea.style.height = 'auto'
-      }
+      if (textarea) textarea.style.height = 'auto'
     }, 0)
     
     try {
-      let response;
+      let response
+      const messageData = {
+        content: currentMessage || '[Sent an attachment]',
+        chat: currentChat?._id || null
+      }
+      if (currentAttachment) {
+        messageData.attachment = {
+          filename: currentAttachment.filename,
+          originalName: currentAttachment.originalName,
+          mimetype: currentAttachment.mimetype,
+          size: currentAttachment.size,
+          path: currentAttachment.path
+        }
+      }
       
-      // Try WebSocket first, fallback to HTTP if needed
       if (connectionStatus === 'connected' && websocketService.isSocketConnected()) {
         try {
-          response = await websocketService.sendMessage({
-            content: currentMessage,
-            chat: currentChat._id
-          })
-          console.log('Received AI response via WebSocket:', response)
+          response = await websocketService.sendMessage(messageData)
         } catch (wsError) {
-          console.warn('WebSocket failed, trying HTTP fallback:', wsError)
-          // For now, create a mock response
-          response = {
-            content: `Echo: "${currentMessage}" (Demo response - backend connection needed for AI)`,
-            chat: currentChat._id
-          }
+          response = { content: `Echo: "${currentMessage}" (Demo response)`, chat: currentChat._id }
         }
       } else {
-        console.warn('WebSocket not connected, using demo response')
-        // Create a mock response for demo
-        response = {
-          content: `Echo: "${currentMessage}" (Demo response - please ensure backend is running on port 3000)`,
-          chat: currentChat._id
-        }
+        response = { content: `Echo: "${currentMessage}" (Demo response - backend not connected)`, chat: currentChat._id }
       }
       
-      // Add AI response to messages
-      const aiMessage = {
-        id: Date.now() + 1,
-        content: response.content,
-        type: 'assistant',
-        timestamp: new Date()
-      }
-      
-      setMessages(prev => [...prev, aiMessage])
-      
+      setMessages(prev => [...prev, { id: Date.now() + 1, content: response.content, type: 'assistant', timestamp: new Date() }])
     } catch (error) {
-      console.error('Failed to send message:', error)
-      
-      // Add error message to chat
-      const errorMessage = {
-        id: Date.now() + 1,
-        content: 'Sorry, I encountered an error. Please ensure the backend server is running on port 3000 and try again.',
-        type: 'assistant',
-        timestamp: new Date()
-      }
-      
-      setMessages(prev => [...prev, errorMessage])
+      setMessages(prev => [...prev, { id: Date.now() + 1, content: 'Sorry, I encountered an error. Please try again.', type: 'assistant', timestamp: new Date() }])
     } finally {
       setIsLoading(false)
     }
   }
   
   const handleFileAttach = () => {
-    console.log('File attach clicked')
+    fileInputRef.current?.click()
   }
-  
-  const handleVoiceRecord = () => {
-    setIsRecording(!isRecording)
-    console.log('Voice record clicked:', !isRecording)
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 10 * 1024 * 1024) { alert('File size must be less than 10MB'); return }
+    
+    // Create local preview URL immediately
+    const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : null
+    
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const response = await apiService.uploadFile(formData)
+      setAttachedFile({ 
+        filename: response.file.filename, 
+        originalName: response.file.originalName, 
+        mimetype: response.file.mimetype, 
+        size: response.file.size, 
+        path: response.file.path,
+        previewUrl  // local blob URL for instant preview
+      })
+    } catch (error) {
+      if (previewUrl) URL.revokeObjectURL(previewUrl)
+      alert('Failed to upload file. Please try again.')
+    }
+    e.target.value = ''
+  }
+
+  const handleRemoveAttachment = () => {
+    if (attachedFile?.previewUrl) URL.revokeObjectURL(attachedFile.previewUrl)
+    setAttachedFile(null)
+  }
+
+  const handleVoiceRecord = async () => {
+    if (!isRecording) {
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) { alert('Your browser does not support voice recording.'); return }
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
+        
+        let recognition = null
+        let speechWorking = false
+        
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+          const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+          recognition = new SR()
+          recognition.continuous = true
+          recognition.interimResults = true
+          recognition.lang = 'en-US'
+          recognition.onstart = () => { speechWorking = true }
+          recognition.onresult = (event) => {
+            let final = '', interim = ''
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+              const t = event.results[i][0].transcript
+              event.results[i].isFinal ? final += t : interim += t
+            }
+            setMessage(prev => prev.replace(/\[Speaking: .*?\]/g, '') + (final || (interim ? `[Speaking: ${interim}]` : '')))
+          }
+          recognition.onerror = () => { speechWorking = false }
+          recognition.onend = () => { speechWorking = false }
+          recognition.start()
+        }
+
+        let recorder = null, chunks = []
+        if (window.MediaRecorder) {
+          const opts = MediaRecorder.isTypeSupported('audio/webm') ? { mimeType: 'audio/webm' } : {}
+          recorder = new MediaRecorder(stream, opts)
+          recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data) }
+          recorder.start(1000)
+        }
+
+        setMediaRecorder({ recorder, recognition, stream, chunks, getSpeechWorking: () => speechWorking })
+        setIsRecording(true)
+      } catch (error) {
+        alert(`Microphone error: ${error.message}`)
+      }
+    } else {
+      if (mediaRecorder) {
+        const { recorder, recognition, stream, chunks, getSpeechWorking } = mediaRecorder
+        if (recognition) recognition.stop()
+        if (recorder?.state !== 'inactive') recorder.stop()
+        stream.getTracks().forEach(t => t.stop())
+
+        setTimeout(async () => {
+          setMessage(prev => prev.replace(/\[Speaking: .*?\]/g, ''))
+          const currentMsg = document.querySelector('.chat-input')?.value || ''
+          const hasTranscript = currentMsg.trim().length > 0 && !currentMsg.includes('[Speaking:')
+
+          if (!hasTranscript && chunks.length > 0) {
+            setMessage(prev => prev + '[Transcribing...]')
+            const blob = new Blob(chunks, { type: recorder?.mimeType || 'audio/webm' })
+            if (blob.size > 0) {
+              const formData = new FormData()
+              formData.append('audio', blob, `recording-${Date.now()}.webm`)
+              try {
+                const response = await apiService.uploadVoice(formData)
+                setMessage(prev => prev.replace('[Transcribing...]', ''))
+                if (response.transcription?.trim()) {
+                  setMessage(prev => prev + response.transcription.trim())
+                } else {
+                  setMessage(prev => prev + '[Transcription failed - please type your message]')
+                }
+              } catch {
+                setMessage(prev => prev.replace('[Transcribing...]', '[Transcription failed - please type your message]'))
+              }
+            }
+          }
+        }, 1000)
+
+        setIsRecording(false)
+        setMediaRecorder(null)
+      }
+    }
   }
   
   const handleKeyPress = (e) => {
@@ -428,31 +480,16 @@ const Chatbot = () => {
         onHistory={handleHistory}
         onUpgrade={handleUpgrade}
         onExpandedChange={handleSidebarExpandedChange}
+        onSelectChat={handleSelectHistoryChat}
       />
       
       {/* Top navbar with essential actions */}
       <nav className="top-navbar">
         <div className="navbar-left">
-          <div 
-            className={`connection-status ${connectionStatus} ${connectionStatus === 'error' ? 'clickable' : ''}`}
-            onClick={connectionStatus === 'error' ? () => setShowAuthModal(true) : undefined}
-            title={connectionStatus === 'error' ? 'Click to resolve connection issue' : undefined}
-          >
-            <div className="status-dot"></div>
-            <span className="status-text">
-              {connectionStatus === 'connected' && 'Connected'}
-              {connectionStatus === 'connecting' && 'Connecting...'}
-              {connectionStatus === 'disconnected' && 'Disconnected'}
-              {connectionStatus === 'error' && 'Connection Error - Click to fix'}
+          {currentChat && currentChat.title && currentChat.title !== 'New Chat' && (
+            <span className="chat-title-text">
+              {currentChat.title}
             </span>
-          </div>
-          
-          {currentChat && (
-            <div className="current-chat-title">
-              <span className="chat-title-text">
-                {currentChat.title || 'New Chat'}
-              </span>
-            </div>
           )}
         </div>
         <div className="navbar-right">
@@ -484,18 +521,58 @@ const Chatbot = () => {
           {messages.map((msg) => (
             <div key={msg.id} className={`message ${msg.type}`}>
               <div className="message-content">
-                {msg.content}
+                {msg.attachment?.mimetype?.startsWith('image/') && (msg.attachment?.previewUrl || msg.attachment?.path) && (
+                  <img
+                    src={msg.attachment.previewUrl || `http://localhost:3000${msg.attachment.path}`}
+                    alt={msg.attachment.originalName}
+                    className="message-image"
+                  />
+                )}
+                {msg.content && msg.content !== '[Sent an attachment]' && (
+                  <div className="message-text">
+                    {msg.type === 'assistant'
+                      ? <MarkdownMessage content={msg.content} />
+                      : <span>{msg.content}</span>
+                    }
+                  </div>
+                )}
               </div>
               <div className="message-time">
                 {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </div>
             </div>
           ))}
+          <div ref={messagesEndRef} />
         </div>
         
         {/* Custom Input Component */}
         <div className="chat-input-container">
+          {messages.length === 0 && (
+            <h2 className="chat-welcome-heading">Where should we begin?</h2>
+          )}
           <div className="chat-input-wrapper">
+            {/* Hidden file input */}
+            <input type="file" ref={fileInputRef} onChange={handleFileChange} style={{ display: 'none' }} accept="image/*,.pdf,.txt,.doc,.docx" />
+
+            {/* Attached file display */}
+            {attachedFile && (
+              <div className="attached-file">
+                {attachedFile.mimetype?.startsWith('image/') ? (
+                  <div className="attached-image-preview">
+                    <img src={attachedFile.previewUrl || `http://localhost:3000${attachedFile.path}`} alt={attachedFile.originalName} className="preview-img" />
+                    <button onClick={handleRemoveAttachment} className="remove-file-btn" title="Remove">✕</button>
+                  </div>
+                ) : (
+                  <div className="file-info">
+                    <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zM6 20V4h7v5h5v11H6z"/></svg>
+                    <span className="file-name">{attachedFile.originalName}</span>
+                    <span className="file-size">({(attachedFile.size / 1024).toFixed(1)} KB)</span>
+                    <button onClick={handleRemoveAttachment} className="remove-file-btn" title="Remove">✕</button>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Text Input Line */}
             <div className="input-text-line">
               <textarea
