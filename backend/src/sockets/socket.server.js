@@ -7,10 +7,6 @@ const { generateResponse, generateVector, generateChatTitle } = require("../serv
 const messageModel = require("../models/message.model");
 const { createMemory } = require("../services/vector.service");
 const { queryMemory } = require("../services/vector.service");
-const {
-  chat,
-} = require("@pinecone-database/pinecone/dist/assistant/data/chat");
-const { text } = require("express");
 
 // Function to clean up empty chats when user disconnects
 async function cleanupEmptyChatsOnDisconnect(userId, currentChatId = null) {
@@ -102,22 +98,25 @@ function InitSocketServer(httpServer) {
     console.log(`[Socket] User ${socket.user._id} joined personal room`);
     
     socket.on("ai-message", async (messagePayLoad) => {
-      // Lazily create chat if not provided (new chat with no messages yet)
-      if (!messagePayLoad.chat) {
-        const newChat = await chatModel.create({
-          user: socket.user._id,
-          title: 'New Chat'
-        });
-        messagePayLoad.chat = newChat._id.toString();
-        // Notify client of the new chat ID so it can track it
-        socket.emit("chat-created", { chatId: messagePayLoad.chat });
-      }
+      try {
+        console.log(`[Socket] Processing message from user ${socket.user._id}`);
+        
+        // Lazily create chat if not provided (new chat with no messages yet)
+        if (!messagePayLoad.chat) {
+          const newChat = await chatModel.create({
+            user: socket.user._id,
+            title: 'New Chat'
+          });
+          messagePayLoad.chat = newChat._id.toString();
+          // Notify client of the new chat ID so it can track it
+          socket.emit("chat-created", { chatId: messagePayLoad.chat });
+          console.log(`[Socket] Created new chat ${messagePayLoad.chat}`);
+        }
 
-      // Update current chat ID when user sends a message
-      socket.currentChatId = messagePayLoad.chat;
-      
-      const [message, vectors] = await Promise.all(
-        [
+        // Update current chat ID when user sends a message
+        socket.currentChatId = messagePayLoad.chat;
+        
+        const [message, vectors] = await Promise.all([
           messageModel.create({
             chat: messagePayLoad.chat,
             user: socket.user._id,
@@ -125,15 +124,14 @@ function InitSocketServer(httpServer) {
             role: "user",
           }),
           generateVector(messagePayLoad.content),
-        ],
-      );
-      
-      // Update chat's last activity
-      await chatModel.findByIdAndUpdate(messagePayLoad.chat, {
-        lastActivity: new Date()
-      });
+        ]);
+        
+        // Update chat's last activity
+        await chatModel.findByIdAndUpdate(messagePayLoad.chat, {
+          lastActivity: new Date()
+        });
 
-      await createMemory({
+        await createMemory({
           vectors,
           metadata: {
             chat: messagePayLoad.chat,
@@ -141,127 +139,136 @@ function InitSocketServer(httpServer) {
             text: messagePayLoad.content,
           },
           messageId: message._id,
-        })
+        });
 
-      const [memory, chatHistory] = await Promise.all([
-  queryMemory({
-    queryVector: vectors,
-    limit: 3,
-    metadata: { user: socket.user._id },
-  }),
-  messageModel.find({
-    chat: messagePayLoad.chat,
-  }).sort({ createdAt: -1 }).limit(20).lean().then(results => results.reverse())
-]);
+        const [memory, chatHistory] = await Promise.all([
+          queryMemory({
+            queryVector: vectors,
+            limit: 3,
+            metadata: { user: socket.user._id },
+          }),
+          messageModel.find({
+            chat: messagePayLoad.chat,
+          }).sort({ createdAt: -1 }).limit(20).lean().then(results => results.reverse())
+        ]);
 
+        const stm = chatHistory.map((item) => {
+          return {
+            role: item.role,
+            parts: [{ text: item.content }],
+          };
+        });
 
-      const stm = chatHistory.map((item) => {
-        return {
-          role: item.role,
-          parts: [{ text: item.content }],
-        };
-      });
+        const ltm = [
+          {
+            role: "user",
+            parts: [
+              {
+                text: `this are the few chats from the past use them to generate them to generate a response ${memory
+                  .map((item) => item.metadata.text)
+                  .join("\n")}`,
+              },
+            ],
+          },
+        ];
 
-      const ltm = [
-        {
-          role: "user",
-          parts: [
-            {
-              text: `this are the few chats from the past use them to generate them to generate a response ${memory
-                .map((item) => item.metadata.text)
-                .join("\n")}`,
-            },
-          ],
-        },
-      ];
+        console.log(`[Socket] Generating AI response...`);
+        const response = await generateResponse([...ltm, ...stm], messagePayLoad.attachment?.path || null);
+        console.log(`[Socket] AI response generated`);
 
-      const response = await generateResponse([...ltm, ...stm], messagePayLoad.attachment?.path || null);
-
-      // Emit AI response to the specific user who sent the message
-      socket.emit("ai-response", {
-        content: response,
-        chat: messagePayLoad.chat,
-      });
-      
-      // Broadcast message updates to the chat room for real-time updates
-      socket.to(`chat_${messagePayLoad.chat}`).emit("message-update", {
-        chatId: messagePayLoad.chat,
-        type: "new_messages"
-      });
-      
-      // Also emit to user's personal room for chat list updates
-      socket.to(`user_${socket.user._id}`).emit("chat-update", {
-        chatId: messagePayLoad.chat,
-        type: "activity_update",
-        lastActivity: new Date()
-      });
-
-      const [responseMessage, responseVector] = await Promise.all([
-        messageModel.create({
-          chat: messagePayLoad.chat,
-          user: socket.user._id,
+        // Emit AI response IMMEDIATELY to the user
+        socket.emit("ai-response", {
           content: response,
-          role: "model",
-        }),
-        generateVector(response),
-      ]);
-
-      await createMemory({
-        vectors: responseVector,
-        metadata: {
           chat: messagePayLoad.chat,
-          user: socket.user._id,
-          text: response,
-        },
-        messageId: responseMessage._id,
-      });
-      
-      // Check if we need to generate a title for this chat
-      try {
-        // Count total messages for this chat to see if this is the first conversation
-        const messageCount = await messageModel.countDocuments({
-          chat: messagePayLoad.chat,
-          user: socket.user._id
         });
         
-        // Generate title after first AI response (when we have user message + AI response)
-        if (messageCount === 2) {
-          console.log(`[Socket] Generating title for chat ${messagePayLoad.chat} after first exchange`);
-          
-          const newTitle = await generateChatTitle(messagePayLoad.content, response);
-          
-          // Update the chat with the new title
-          const updatedChat = await chatModel.findByIdAndUpdate(
-            messagePayLoad.chat,
-            { 
-              title: newTitle,
-              lastActivity: new Date()
-            },
-            { new: true }
-          );
-          
-          console.log(`[Socket] Updated chat title to: "${newTitle}"`);
-          
-          // Emit title update to user's room for immediate UI refresh
-          io.to(`user_${socket.user._id}`).emit("chat-title-update", {
-            chatId: messagePayLoad.chat,
-            title: newTitle,
-            type: "title_generated"
-          });
-        }
-      } catch (titleError) {
-        console.error('[Socket] Error generating chat title:', titleError);
-        // Don't fail the message sending if title generation fails
-      }
-      
-      // Final broadcast to update chat history with all messages
-      io.to(`user_${socket.user._id}`).emit("chat-history-update", {
-        chatId: messagePayLoad.chat,
-        type: "messages_added",
-        messageCount: 2 // user message + AI response
-      });
+        // Broadcast message updates to the chat room for real-time updates
+        socket.to(`chat_${messagePayLoad.chat}`).emit("message-update", {
+          chatId: messagePayLoad.chat,
+          type: "new_messages"
+        });
+        
+        // Also emit to user's personal room for chat list updates
+        socket.to(`user_${socket.user._id}`).emit("chat-update", {
+          chatId: messagePayLoad.chat,
+          type: "activity_update",
+          lastActivity: new Date()
+        });
 
-      
+        // Do all the heavy lifting in the background without blocking
+        setImmediate(async () => {
+          try {
+            const [responseMessage, responseVector] = await Promise.all([
+              messageModel.create({
+                chat: messagePayLoad.chat,
+                user: socket.user._id,
+                content: response,
+                role: "model",
+              }),
+              generateVector(response),
+            ]);
+
+            await createMemory({
+              vectors: responseVector,
+              metadata: {
+                chat: messagePayLoad.chat,
+                user: socket.user._id,
+                text: response,
+              },
+              messageId: responseMessage._id,
+            });
+            
+            // Check if we need to generate a title for this chat
+            const messageCount = await messageModel.countDocuments({
+              chat: messagePayLoad.chat,
+              user: socket.user._id
+            });
+            
+            // Generate title after first AI response (when we have user message + AI response)
+            if (messageCount === 2) {
+              console.log(`[Socket] Generating title for chat ${messagePayLoad.chat} after first exchange`);
+              
+              const newTitle = await generateChatTitle(messagePayLoad.content, response);
+              
+              // Update the chat with the new title
+              await chatModel.findByIdAndUpdate(
+                messagePayLoad.chat,
+                { 
+                  title: newTitle,
+                  lastActivity: new Date()
+                },
+                { new: true }
+              );
+              
+              console.log(`[Socket] Updated chat title to: "${newTitle}"`);
+              
+              // Emit title update to user's room for immediate UI refresh
+              io.to(`user_${socket.user._id}`).emit("chat-title-update", {
+                chatId: messagePayLoad.chat,
+                title: newTitle,
+                type: "title_generated"
+              });
+            }
+            
+            // Final broadcast to update chat history with all messages
+            io.to(`user_${socket.user._id}`).emit("chat-history-update", {
+              chatId: messagePayLoad.chat,
+              type: "messages_added",
+              messageCount: 2 // user message + AI response
+            });
+          } catch (error) {
+            console.error('[Socket] Error in background processing:', error);
+          }
+        });
+        
+      } catch (error) {
+        console.error('[Socket] Error processing message:', error);
+        socket.emit("ai-response", {
+          content: "Sorry, I encountered an error. Please try again.",
+          chat: messagePayLoad.chat,
+          error: true
+        });
+      }
     });
     
     // Handle disconnect event to cleanup empty chats
