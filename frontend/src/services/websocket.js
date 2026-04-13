@@ -16,7 +16,7 @@ class WebSocketService {
     this.connectionPromise = new Promise((resolve, reject) => {
       try {
         // Connect to your backend WebSocket server
-        this.socket = io('http://localhost:3000', {
+        this.socket = io(import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000', {
           withCredentials: true, // This sends cookies for authentication
           transports: ['websocket', 'polling']
         });
