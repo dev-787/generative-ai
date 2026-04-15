@@ -54,7 +54,12 @@ async function cleanupEmptyChatsOnDisconnect(userId, currentChatId = null) {
 }
 
 function InitSocketServer(httpServer) {
-  const io = new Server(httpServer, {});
+  const io = new Server(httpServer, {
+    cors: {
+      origin: true,
+      credentials: true
+    }
+  });
 
   io.use(async (socket, next) => {
     const cookies = cookie.parse(socket.handshake.headers?.cookie || "");
