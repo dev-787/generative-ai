@@ -523,7 +523,7 @@ const Chatbot = () => {
               <div className="message-content">
                 {msg.attachment?.mimetype?.startsWith('image/') && (msg.attachment?.previewUrl || msg.attachment?.path) && (
                   <img
-                    src={msg.attachment.previewUrl || `http://localhost:3000${msg.attachment.path}`}
+                    src={msg.attachment.previewUrl || `https://generative-ai-gggg.onrender.com${msg.attachment.path}`}
                     alt={msg.attachment.originalName}
                     className="message-image"
                   />
@@ -559,7 +559,7 @@ const Chatbot = () => {
               <div className="attached-file">
                 {attachedFile.mimetype?.startsWith('image/') ? (
                   <div className="attached-image-preview">
-                    <img src={attachedFile.previewUrl || `http://localhost:3000${attachedFile.path}`} alt={attachedFile.originalName} className="preview-img" />
+                    <img src={attachedFile.previewUrl || `https://generative-ai-gggg.onrender.com${attachedFile.path}`} alt={attachedFile.originalName} className="preview-img" />
                     <button onClick={handleRemoveAttachment} className="remove-file-btn" title="Remove">✕</button>
                   </div>
                 ) : (
