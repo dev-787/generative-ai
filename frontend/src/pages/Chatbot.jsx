@@ -100,8 +100,14 @@ const Chatbot = () => {
         }
         
         // Connect to WebSocket
-        await websocketService.connect()
-        setConnectionStatus('connected')
+        try {
+          await websocketService.connect()
+          setConnectionStatus('connected')
+        } catch (wsError) {
+          console.error('WebSocket connection error:', wsError)
+          // Don't block UI if websocket fails — user can still see the page
+          setConnectionStatus('error')
+        }
         
         // Start with a clean empty state — chat is created lazily on first message
         
@@ -109,33 +115,25 @@ const Chatbot = () => {
         console.error('Failed to initialize chat:', error)
         setConnectionStatus('error')
         
-        // Check for authentication errors first
+        // Check for authentication errors only
         const isAuthError = (
           error.isAuthError || 
           (error.message && (
             error.message.includes('401') || 
-            error.message.includes('Unauthorized') ||
-            error.message.includes('fetch') ||
-            error.message.includes('Failed to fetch')
+            error.message.includes('Unauthorized')
           ))
         )
         
         if (isAuthError) {
-          console.warn('Authentication/connection issue detected, showing auth modal')
-          // Show auth modal instead of immediate logout
+          console.warn('Authentication issue detected, showing auth modal')
           setTimeout(() => {
             setShowAuthModal(true)
-          }, 1000) // Small delay to let user see the error status
+          }, 1000)
           return
         }
         
-        // For any other connection error, also show the modal after some time
+        // For general connection errors (CORS, network, etc.) just log — don't show auth modal
         console.warn('General connection error detected')
-        setTimeout(() => {
-          if (connectionStatus === 'error') {
-            setShowAuthModal(true)
-          }
-        }, 2000)
         
         // If WebSocket fails, still allow the user to see the UI
         if (error.message && error.message.includes('WebSocket')) {
